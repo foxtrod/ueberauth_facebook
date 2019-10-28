@@ -133,21 +133,51 @@ defmodule Ueberauth.Strategy.Facebook do
   end
 
   defp fetch_user(conn, token) do
-    conn = put_private(conn, :google_token, token)
-
-    # userinfo_endpoint from https://accounts.google.com/.well-known/openid-configuration
-    path = "https://www.googleapis.com/oauth2/v3/userinfo"
+    conn = put_private(conn, :facebook_token, token)
+    query = user_query(conn, token)
+    path = "/me?#{query}"
     resp = Ueberauth.Strategy.Facebook.OAuth.get(token, path)
 
     case resp do
       {:ok, %OAuth2.Response{status_code: 401, body: _body}} ->
         set_errors!(conn, [error("token", "unauthorized")])
-      {:ok, %OAuth2.Response{status_code: status_code, body: user}} when status_code in 200..399 ->
-        put_private(conn, :google_user, user)
+      {:ok, %OAuth2.Response{status_code: status_code, body: user}}
+        when status_code in 200..399 ->
+        put_private(conn, :facebook_user, user)
       {:error, %OAuth2.Response{status_code: status_code}} ->
         set_errors!(conn, [error("OAuth2", status_code)])
       {:error, %OAuth2.Error{reason: reason}} ->
         set_errors!(conn, [error("OAuth2", reason)])
+    end
+  end
+
+  defp user_query(conn, token) do
+    %{"appsecret_proof" => appsecret_proof(token)}
+    |> Map.merge(query_params(conn, :locale))
+    |> Map.merge(query_params(conn, :profile))
+    |> URI.encode_query
+  end
+
+  defp appsecret_proof(token) do
+    config = Application.get_env(:ueberauth, Ueberauth.Strategy.Facebook.OAuth)
+    client_secret = Keyword.get(config, :client_secret)
+
+    token.access_token
+    |> hmac(:sha256, client_secret)
+    |> Base.encode16(case: :lower)
+  end
+
+  defp hmac(data, type, key) do
+    :crypto.hmac(type, key, data)
+  end
+
+  defp query_params(conn, :profile) do
+    %{"fields" => option(conn, :profile_fields)}
+  end
+  defp query_params(conn, :locale) do
+    case option(conn, :locale) do
+      nil -> %{}
+      locale -> %{"locale" => locale}
     end
   end
 
