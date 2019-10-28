@@ -151,36 +151,6 @@ defmodule Ueberauth.Strategy.Facebook do
     end
   end
 
-  defp user_query(conn, token) do
-    %{"appsecret_proof" => appsecret_proof(token)}
-    |> Map.merge(query_params(conn, :locale))
-    |> Map.merge(query_params(conn, :profile))
-    |> URI.encode_query
-  end
-
-  defp appsecret_proof(token) do
-    config = Application.get_env(:ueberauth, Ueberauth.Strategy.Facebook.OAuth)
-    client_secret = Keyword.get(config, :client_secret)
-
-    token.access_token
-    |> hmac(:sha256, client_secret)
-    |> Base.encode16(case: :lower)
-  end
-
-  defp hmac(data, type, key) do
-    :crypto.hmac(type, key, data)
-  end
-
-  defp query_params(conn, :profile) do
-    %{"fields" => option(conn, :profile_fields)}
-  end
-  defp query_params(conn, :locale) do
-    case option(conn, :locale) do
-      nil -> %{}
-      locale -> %{"locale" => locale}
-    end
-  end
-
   defp option(conn, key) do
     default = Keyword.get(default_options(), key)
 
