@@ -44,16 +44,13 @@ defmodule Ueberauth.Strategy.Facebook do
   Handles the callback from Facebook.
   """
   def handle_callback!(%Plug.Conn{params: %{"code" => code}} = conn) do
+    params = [code: code]
     opts = [redirect_uri: callback_url(conn)]
-    client = Ueberauth.Strategy.Facebook.OAuth.get_token!([code: code], opts)
-    token = client.token
-
-    if token.access_token == nil do
-      err = token.other_params["error"]
-      desc = token.other_params["error_description"]
-      set_errors!(conn, [error(err, desc)])
-    else
-      fetch_user(conn, client)
+    case Ueberauth.Strategy.Facebook.OAuth.get_access_token(params, opts) do
+      {:ok, token} ->
+        fetch_user(conn, token)
+      {:error, {error_code, error_description}} ->
+        set_errors!(conn, [error(error_code, error_description)])
     end
   end
 
@@ -135,16 +132,20 @@ defmodule Ueberauth.Strategy.Facebook do
     "https://graph.facebook.com/#{uid}/picture?type=square"
   end
 
-  defp fetch_user(conn, client) do
-    conn = put_private(conn, :facebook_token, client.token)
-    query = user_query(conn, client.token)
-    path = "/me?#{query}"
-    case OAuth2.Client.get(client, path) do
+  defp fetch_user(conn, token) do
+    conn = put_private(conn, :google_token, token)
+
+    # userinfo_endpoint from https://accounts.google.com/.well-known/openid-configuration
+    path = "https://www.googleapis.com/oauth2/v3/userinfo"
+    resp = Ueberauth.Strategy.Facebook.OAuth.get(token, path)
+
+    case resp do
       {:ok, %OAuth2.Response{status_code: 401, body: _body}} ->
         set_errors!(conn, [error("token", "unauthorized")])
-      {:ok, %OAuth2.Response{status_code: status_code, body: user}}
-        when status_code in 200..399 ->
-        put_private(conn, :facebook_user, user)
+      {:ok, %OAuth2.Response{status_code: status_code, body: user}} when status_code in 200..399 ->
+        put_private(conn, :google_user, user)
+      {:error, %OAuth2.Response{status_code: status_code}} ->
+        set_errors!(conn, [error("OAuth2", status_code)])
       {:error, %OAuth2.Error{reason: reason}} ->
         set_errors!(conn, [error("OAuth2", reason)])
     end

@@ -52,6 +52,25 @@ defmodule Ueberauth.Strategy.Facebook.OAuth do
     |> OAuth2.Client.get_token!(params)
   end
 
+  def get_access_token(params \\ [], opts \\ []) do
+    case opts |> client |> OAuth2.Client.get_token(params) do
+      {:error, %{body: %{"error" => %{"code" => code}, "error" => %{"message" => message}}}} ->
+        {:error, {code, message}}
+      {:ok, %{token: %{access_token: nil} = token}} ->
+        %{"error" => error, "error_description" => description} = token.other_params
+        {:error, {error, description}}
+      {:ok, %{token: token}} ->
+        {:ok, token}
+    end
+  end
+
+  def get(token, url, headers \\ [], opts \\ []) do
+    [token: token]
+    |> client
+    |> put_param("client_secret", client().client_secret)
+    |> OAuth2.Client.get(url, headers, opts)
+  end
+
   # Strategy Callbacks
 
   def authorize_url(client, params) do
